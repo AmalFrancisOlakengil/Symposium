@@ -157,6 +157,17 @@ def fetch_group_personas(group_id: int) -> list[dict]:
         """, (group_id,))
         return [dict(row) for row in cursor.fetchall()]
 
+def fetch_all_groups() -> list[dict]:
+    """Retrieves all chat groups ordered by creation time (newest first)."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, title, model_id, created_at 
+            FROM chat_groups 
+            ORDER BY id DESC
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
 
 def save_message(group_id: int, sender_name: str, sender_role: str, content: str) -> int:
     """Saves a single message (User, Agent, or Moderator) to the chat log."""
