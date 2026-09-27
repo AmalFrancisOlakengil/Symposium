@@ -1,0 +1,194 @@
+# db.py
+import sqlite3
+
+DB_NAME = "symposium.db"  # Updated database file name
+
+# Core default personalities
+DEFAULT_PERSONAS = [
+    (
+        "The Feasibility Guy",
+        "You are an expert systems engineer and operations manager. "
+        "Focus strictly on technical viability, complexity, logistics, and practical implementation hurdles. "
+        "Be constructive but realistic.",
+        0
+    ),
+    (
+        "The Budget Guy",
+        "You are a cautious CFO. Evaluate costs, infrastructure overhead, "
+        "monetization potential, and resource efficiency. Keep your tone practical and financially minded.",
+        0
+    ),
+    (
+        "The Innovation Guy",
+        "You are a visionary product architect. Push the boundaries of the concept. "
+        "Suggest unique features, modern tech integration, and novel user experiences.",
+        0
+    ),
+    (
+        "The Pessimist",
+        "You are a strict risk reviewer. Actively search for edge cases, single points of failure, "
+        "market saturation, security concerns, and false assumptions. Highlight weaknesses clearly.",
+        0
+    ),
+    (
+        "The Optimist",
+        "You are an encouraging product strategist. Focus on high-value potential, "
+        "user benefits, excitement, and opportunity areas. Inspire confidence while staying coherent.",
+        0
+    )
+]
+
+
+def get_connection():
+    """Returns a connection to the SQLite database with row dict access."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    """Initializes tables and seeds default personas if not already present."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+
+        # 1. Chat Groups
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chat_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # 2. Personas / Agents
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS personas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                system_prompt TEXT NOT NULL,
+                is_custom BOOLEAN DEFAULT 0
+            )
+        """)
+
+        # 3. Messages
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id INTEGER NOT NULL,
+                sender_name TEXT NOT NULL,
+                sender_role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(group_id) REFERENCES chat_groups(id) ON DELETE CASCADE
+            )
+        """)
+
+        # 4. Group Members (Many-to-Many mapping)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS group_agents (
+                group_id INTEGER NOT NULL,
+                persona_id INTEGER NOT NULL,
+                PRIMARY KEY (group_id, persona_id),
+                FOREIGN KEY(group_id) REFERENCES chat_groups(id) ON DELETE CASCADE,
+                FOREIGN KEY(persona_id) REFERENCES personas(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Seed Default Personas
+        cursor.executemany("""
+            INSERT OR IGNORE INTO personas (name, system_prompt, is_custom)
+            VALUES (?, ?, ?)
+        """, DEFAULT_PERSONAS)
+
+        conn.commit()
+
+
+# --- CRUD Helper Functions ---
+
+def create_chat_group(title: str, model_id: str, persona_ids: list[int]) -> int:
+    """Creates a new chat room and links the selected personas to it."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO chat_groups (title, model_id) VALUES (?, ?)",
+            (title, model_id)
+        )
+        group_id = cursor.lastrowid
+
+        # Associate selected personas with the group
+        for p_id in persona_ids:
+            cursor.execute(
+                "INSERT INTO group_agents (group_id, persona_id) VALUES (?, ?)",
+                (group_id, p_id)
+            )
+
+        conn.commit()
+        return group_id
+
+
+def add_custom_persona(name: str, system_prompt: str) -> int:
+    """Adds a user-defined persona agent."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO personas (name, system_prompt, is_custom) VALUES (?, ?, 1)",
+            (name, system_prompt)
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+
+def fetch_all_personas() -> list[dict]:
+    """Retrieves all default and custom personas."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM personas ORDER BY is_custom ASC, name ASC")
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def fetch_group_personas(group_id: int) -> list[dict]:
+    """Fetches all active personas configured for a given chat group."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT p.* FROM personas p
+            JOIN group_agents ga ON p.id = ga.persona_id
+            WHERE ga.group_id = ?
+        """, (group_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def save_message(group_id: int, sender_name: str, sender_role: str, content: str) -> int:
+    """Saves a single message (User, Agent, or Moderator) to the chat log."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO messages (group_id, sender_name, sender_role, content)
+            VALUES (?, ?, ?, ?)
+        """, (group_id, sender_name, sender_role, content))
+        conn.commit()
+        return cursor.lastrowid
+
+
+def fetch_messages(group_id: int) -> list[dict]:
+    """Retrieves the full message transcript for a chat group."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT sender_name, sender_role, content, timestamp 
+            FROM messages 
+            WHERE group_id = ? 
+            ORDER BY id ASC
+        """, (group_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+if __name__ == "__main__":
+    # Sanity check run
+    init_db()
+    print("Database schema initialized successfully.")
+    personas = fetch_all_personas()
+    print(f"Loaded {len(personas)} personas:")
+    for p in personas:
+        print(f" - [{p['id']}] {p['name']} (Custom: {bool(p['is_custom'])})")
