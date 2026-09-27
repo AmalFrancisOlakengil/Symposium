@@ -1,4 +1,3 @@
-import os
 import queue
 import customtkinter as ctk
 import db
@@ -35,7 +34,7 @@ class SymposiumApp(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         # --- LEFT SIDEBAR ---
-        self.sidebar = ctk.CTkScrollableFrame(self, width=300, corner_radius=0)
+        self.sidebar = ctk.CTkScrollableFrame(self, width=320, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
 
         # Title
@@ -48,7 +47,7 @@ class SymposiumApp(ctk.CTk):
         self.api_key_entry = ctk.CTkEntry(self.sidebar, placeholder_text="gsk_...", show="*")
         self.api_key_entry.pack(fill="x", padx=15, pady=(0, 10))
 
-        # Model Entry Field (Text Field)
+        # Model Entry Field
         ctk.CTkLabel(self.sidebar, text="Model ID:", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=15, pady=(5, 2))
         self.model_entry = ctk.CTkEntry(self.sidebar, placeholder_text="e.g. llama-3.3-70b-versatile")
         self.model_entry.insert(0, "llama-3.3-70b-versatile")
@@ -76,10 +75,11 @@ class SymposiumApp(ctk.CTk):
         self.custom_persona_frame = ctk.CTkFrame(self.sidebar)
         self.custom_name_entry = ctk.CTkEntry(self.custom_persona_frame, placeholder_text="Persona Name")
         self.custom_name_entry.pack(fill="x", padx=10, pady=4)
-        self.custom_role_entry = ctk.CTkEntry(self.custom_persona_frame, placeholder_text="Role / Speciality")
-        self.custom_role_entry.pack(fill="x", padx=10, pady=4)
-        self.custom_prompt_entry = ctk.CTkEntry(self.custom_persona_frame, placeholder_text="System Prompt / Persona Instructions")
+        
+        self.custom_prompt_entry = ctk.CTkTextbox(self.custom_persona_frame, height=80, wrap="word")
         self.custom_prompt_entry.pack(fill="x", padx=10, pady=4)
+        self.custom_prompt_entry.insert("1.0", "Enter system prompt/instructions...")
+
         ctk.CTkButton(self.custom_persona_frame, text="Save Persona", command=self._save_custom_persona).pack(fill="x", padx=10, pady=(4, 8))
 
         # --- PAST SESSIONS SECTION ---
@@ -144,7 +144,7 @@ class SymposiumApp(ctk.CTk):
         self._refresh_past_groups()
 
     def _refresh_personas(self):
-        """Re-render persona list in sidebar."""
+        """Re-render persona list in sidebar with delete options."""
         for widget in self.persona_frame.winfo_children():
             widget.destroy()
 
@@ -152,13 +152,30 @@ class SymposiumApp(ctk.CTk):
         personas = db.fetch_all_personas()
 
         for persona in personas:
+            p_row = ctk.CTkFrame(self.persona_frame, fg_color="transparent")
+            p_row.pack(fill="x", pady=2, padx=2)
+            p_row.grid_columnconfigure(0, weight=1)
+
             var = ctk.BooleanVar(value=True)
-            chk = ctk.CTkCheckBox(self.persona_frame, text=f"{persona['name']}", variable=var)
-            chk.pack(anchor="w", pady=4, padx=5)
+            chk = ctk.CTkCheckBox(p_row, text=f"{persona['name']}", variable=var)
+            chk.grid(row=0, column=0, sticky="w", padx=2)
             self.persona_checkboxes[persona["id"]] = (chk, var)
 
+            # Delete button for persona
+            del_btn = ctk.CTkButton(
+                p_row,
+                text="✕",
+                width=24,
+                height=24,
+                fg_color="transparent",
+                text_color="gray",
+                hover_color="#552222",
+                command=lambda p_id=persona["id"]: self._delete_persona(p_id)
+            )
+            del_btn.grid(row=0, column=1, sticky="e", padx=2)
+
     def _refresh_past_groups(self):
-        """Re-render past chat groups in sidebar."""
+        """Re-render past chat groups in sidebar with delete options."""
         for widget in self.past_groups_frame.winfo_children():
             widget.destroy()
 
@@ -181,6 +198,19 @@ class SymposiumApp(ctk.CTk):
             )
             btn.grid(row=0, column=0, sticky="ew", padx=(2, 2))
 
+            # Delete button for group
+            del_btn = ctk.CTkButton(
+                btn_frame,
+                text="✕",
+                width=24,
+                height=24,
+                fg_color="transparent",
+                text_color="gray",
+                hover_color="#552222",
+                command=lambda g_id=group["id"]: self._delete_group(g_id)
+            )
+            del_btn.grid(row=0, column=1, sticky="e", padx=2)
+
     def _toggle_custom_persona_form(self):
         """Expands or collapses custom persona creation form."""
         if self.custom_persona_frame.winfo_ismapped():
@@ -189,30 +219,44 @@ class SymposiumApp(ctk.CTk):
             self.custom_persona_frame.pack(fill="x", padx=15, pady=5, after=self.add_persona_btn)
 
     def _save_custom_persona(self):
-        """Saves custom persona to database and refreshes checklist."""
+        """Saves custom persona using (name, system_prompt)."""
         name = self.custom_name_entry.get().strip()
-        role = self.custom_role_entry.get().strip()
-        prompt = self.custom_prompt_entry.get().strip()
+        prompt = self.custom_prompt_entry.get("1.0", "end").strip()
 
-        if not name or not prompt:
-            self.status_label.configure(text="⚠️ Custom Persona requires at least a Name and System Prompt.")
+        if not name or not prompt or prompt == "Enter system prompt/instructions...":
+            self.status_label.configure(text="⚠️ Custom Persona requires a Name and System Prompt.")
             return
 
-        db.add_custom_persona(name, role or "Specialist", prompt)
+        db.add_custom_persona(name, prompt)
         
         # Clear inputs and hide form
         self.custom_name_entry.delete(0, "end")
-        self.custom_role_entry.delete(0, "end")
-        self.custom_prompt_entry.delete(0, "end")
+        self.custom_prompt_entry.delete("1.0", "end")
         self.custom_persona_frame.pack_forget()
 
         # Refresh persona list
         self._refresh_personas()
-        self.status_label.configure(text=f"✅ Saved persona '{name}'.")
+        self.status_label.configure(text=f"✅ Saved custom persona '{name}'.")
+
+    def _delete_persona(self, persona_id: int):
+        """Deletes a persona from DB and updates UI."""
+        db.delete_persona(persona_id)
+        self._refresh_personas()
+        self.status_label.configure(text="🗑️ Persona deleted.")
+
+    def _delete_group(self, group_id: int):
+        """Deletes a chat group from DB and updates UI."""
+        db.delete_chat_group(group_id)
+        if self.current_group_id == group_id:
+            for widget in self.chat_display.winfo_children():
+                widget.destroy()
+            self.current_group_id = None
+
+        self._refresh_past_groups()
+        self.status_label.configure(text="🗑️ Discussion deleted.")
 
     def load_past_group(self, group_id: int):
         """Loads and displays history of a past session in the chat viewer."""
-        # Clear chat container
         for widget in self.chat_display.winfo_children():
             widget.destroy()
 
@@ -334,7 +378,6 @@ class SymposiumApp(ctk.CTk):
             self.status_label.configure(text="⚠️ Select at least one persona agent.")
             return
 
-        # Clear existing view for new session
         for widget in self.chat_display.winfo_children():
             widget.destroy()
 

@@ -94,6 +94,8 @@ def init_db():
             )
         """)
 
+    
+
         # Seed Default Personas
         cursor.executemany("""
             INSERT OR IGNORE INTO personas (name, system_prompt, is_custom)
@@ -136,6 +138,24 @@ def add_custom_persona(name: str, system_prompt: str) -> int:
         )
         conn.commit()
         return cursor.lastrowid
+
+
+def delete_persona(persona_id: int):
+    """Deletes a persona and unbinds it from group associations."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM personas WHERE id = ?", (persona_id,))
+        conn.commit()
+
+
+def delete_chat_group(group_id: int):
+    """Deletes a chat group along with its messages and persona bindings."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM messages WHERE group_id = ?", (group_id,))
+        cursor.execute("DELETE FROM group_agents WHERE group_id = ?", (group_id,))
+        cursor.execute("DELETE FROM chat_groups WHERE id = ?", (group_id,))
+        conn.commit()
 
 
 def fetch_all_personas() -> list[dict]:
