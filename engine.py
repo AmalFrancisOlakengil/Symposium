@@ -54,7 +54,7 @@ class SymposiumEngine:
             model=self.model_id,
             messages=messages,
             temperature=0.7,
-            max_tokens=600
+            max_tokens=120
         )
         reply = response.choices[0].message.content.strip()
         
