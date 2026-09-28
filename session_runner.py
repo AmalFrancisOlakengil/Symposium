@@ -81,30 +81,47 @@ class SymposiumSessionRunner:
                 })
 
                 # Call Groq API
-                reply = self.engine.call_agent(persona)
+                try:
+                    reply = self.engine.call_agent(persona)
 
-                # Send new message to UI
-                self.ui_callback({
-                    "type": "NEW_MESSAGE",
-                    "sender": persona["name"],
-                    "sender_role": "assistant",
-                    "content": reply
-                })
+                    # Send new message to UI
+                    self.ui_callback({
+                        "type": "NEW_MESSAGE",
+                        "sender": persona["name"],
+                        "sender_role": "assistant",
+                        "content": reply
+                    })
+                except:
+                    self.is_running = False
+                    self.ui_callback({
+                                                       "type": "SESSION_ENDED",
+                                                       "summary": "An Error Occurred to your Groq API call \n Possible reasons: \n 1) Invalid API key\n2) Invalid Model ID\n 3) Rate Limit reached"
+                    })
+                    break
 
             if not self.is_running:
                 break
 
             # 2. Call Moderator to check consensus and summarize round
             self.ui_callback({"type": "MODERATOR_THINKING"})
-            mod_data = self.engine.call_moderator()
+            try:
+                mod_data = self.engine.call_moderator()
 
-            # 3. Trigger UI Prompt Gate (Displays choices & consensus info)
-            self.ui_callback({
-                "type": "PROMPT_GATE",
-                "consensus_reached": mod_data.get("consensus_reached", False),
-                "round_summary": mod_data.get("round_summary", ""),
-                "suggested_message": mod_data.get("suggested_message", "")
-            })
+                # 3. Trigger UI Prompt Gate (Displays choices & consensus info)
+                self.ui_callback({
+                    "type": "PROMPT_GATE",
+                    "consensus_reached": mod_data.get("consensus_reached", False),
+                    "round_summary": mod_data.get("round_summary", ""),
+                    "suggested_message": mod_data.get("suggested_message", "")
+                })
+            except:
+                self.is_running = False
+                self.ui_callback({
+                                   "type": "SESSION_ENDED",
+                                   "summary": "An Error Occurred to your Groq API call \n Possible reasons: \n 1) Invalid API key\n2) Invalid Model ID\n 3) Rate Limit reached"
+                })
+                break
+
 
             # 4. PAUSE THREAD: Wait until user clicks a button in the UI
             self.user_action_event.clear()
