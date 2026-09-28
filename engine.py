@@ -1,6 +1,7 @@
 import json
 from groq import Groq
 import db
+import re
 
 MODERATOR_SYSTEM_PROMPT = """
 You are the Discussion Moderator for 'Symposium', an AI product brainstorming app.
@@ -16,7 +17,12 @@ You MUST respond ONLY with valid JSON matching this schema:
   "suggested_message": "A guiding question or suggestion for the user if they want to steer the debate."
 }
 """
-
+def clean_agent_response(persona_name: str, raw_text: str) -> str:
+    """Strips recursive speaker prefixes like '[The Pessimist]:' or 'The Pessimist:'."""
+    # Pattern matches standard brackets [Name]: or plain Name: at the start
+    pattern = r"^(?:\[?[A-Za-z0-9_\s\-\(\)]+\]?:\s*)+"
+    cleaned = re.sub(pattern, "", raw_text.strip()).strip()
+    return cleaned
 
 class SymposiumEngine:
     def __init__(self, api_key: str, model_id: str, group_id: int):
@@ -57,9 +63,10 @@ class SymposiumEngine:
             max_tokens=120
         )
         reply = response.choices[0].message.content.strip()
+        cleaned_text = clean_agent_response(persona['name'], reply)
         
         # Save agent response to DB
-        db.save_message(self.group_id, persona["name"], "assistant", reply)
+        db.save_message(self.group_id, persona["name"], "assistant", cleaned_text)
         return reply
 
     def call_moderator(self) -> dict:
@@ -78,7 +85,8 @@ class SymposiumEngine:
         )
         
         result_text = response.choices[0].message.content.strip()
-        mod_data = json.loads(result_text)
+        cleaned_text = clean_agent_response("Moderator", result_text)
+        mod_data = json.loads(cleaned_text)
         
         # Save summary to DB log
         summary_text = f"[Moderator Summary]: {mod_data['round_summary']}"

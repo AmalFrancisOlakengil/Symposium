@@ -5,8 +5,10 @@ DB_NAME = "symposium.db"  # Updated database file name
 
 # Core default personalities
 CONVERSATIONAL_INSTRUCTION = (
-    " Keep your response extremely concise, direct, and under 3-4 sentences (max 80 words). "
+    "Keep your response extremely concise, direct, and under 3-4 sentences (max 80 words). "
     "Speak casually like a team member in a quick brainstorming meeting. No long intro or outro filler."
+    "Do NOT include your persona name, brackets, or prefixes (e.g. '[The Pessimist]:') in your output."
+    "Respond directly in plain text with only your message content."
 )
 
 DEFAULT_PERSONAS = [
